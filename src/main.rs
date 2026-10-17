@@ -5,6 +5,8 @@ use std::{net::SocketAddr, time::Duration};
 mod api;
 mod config;
 mod domain;
+mod outbox;
+mod workers;
 
 #[derive(Clone)]
 pub struct AppState {
@@ -26,6 +28,10 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!().run(&db).await?;
     tracing::info!("migration appplied");
 
+    let (event_tx, event_rx) = tokio::sync::mpsc::channel(256);
+    tokio::spawn(workers::log_consumer(event_rx));
+    tokio::spawn(outbox::poller::run(db.clone(), event_tx));
+
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/health/ready", get(ready))
@@ -33,7 +39,8 @@ async fn main() -> anyhow::Result<()> {
         .with_state(AppState { db });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
-    tracing::info!("listening on addr");
+    tracing::info!("migrations applied");
+    tracing::info!("listening on {addr}");
     let listener = tokio::net::TcpListener::bind(addr).await?;
     axum::serve(listener, app).await?;
     Ok(())
