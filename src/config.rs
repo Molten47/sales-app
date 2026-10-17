@@ -1,6 +1,5 @@
 use anyhow::{Context, Ok};
 
-
 #[derive(Debug, Clone)]
 
 pub struct Config {
