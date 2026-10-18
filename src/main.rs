@@ -7,10 +7,12 @@ mod config;
 mod domain;
 mod outbox;
 mod workers;
+mod ws;
 
 #[derive(Clone)]
 pub struct AppState {
     pub db: PgPool,
+    pub hub: ws::hub::Hub,
 }
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -28,15 +30,18 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!().run(&db).await?;
     tracing::info!("migration appplied");
 
+    let hub = ws::hub::Hub::default();
+
     let (event_tx, event_rx) = tokio::sync::mpsc::channel(256);
-    tokio::spawn(workers::log_consumer(event_rx));
+    tokio::spawn(workers::route_events(event_rx, hub.clone()));
     tokio::spawn(outbox::poller::run(db.clone(), event_tx));
 
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/health/ready", get(ready))
+        .route("/ws/connect", get(ws::handler::ws_connect))
         .merge(api::router())
-        .with_state(AppState { db });
+        .with_state(AppState { db, hub });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     tracing::info!("migrations applied");
