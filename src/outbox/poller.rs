@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use sqlx::{postgres::PgListener, PgPool};
+use sqlx::{PgPool, postgres::PgListener};
 use tokio::sync::mpsc;
 
 use super::OutboxEvent;
