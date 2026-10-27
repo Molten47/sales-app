@@ -60,7 +60,7 @@ impl Hub {
         self.reap(dead);
         delivered
     }
-
+    #[allow(dead_code)]
     pub fn broadcast_staff(&self, msg: &str) -> usize {
         let (delivered, dead) = {
             let reg = self.inner.read().unwrap();
