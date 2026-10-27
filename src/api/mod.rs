@@ -1,4 +1,5 @@
 mod error;
+pub mod notifications;
 mod orders;
 mod users;
 
