@@ -22,7 +22,8 @@ pub async fn route_events(mut rx: mpsc::Receiver<OutboxEvent>, hub: Hub, db: PgP
                     .and_then(|s| s.parse::<Uuid>().ok());
 
                 // 1. persist first, so offline users still get it
-                let Some(rows) = persist(&db, customer_id, &e.event_type, &e.payload).await else {
+                let Some(rows) = persist(&db, customer_id, &e.event_type, e.id, &e.payload).await
+                else {
                     tracing::error!(event_id = %e.id, "notification insert failed, giving up");
                     continue;
                 };
@@ -59,10 +60,11 @@ async fn persist(
     db: &PgPool,
     customer_id: Option<Uuid>,
     kind: &str,
+    event_id: Uuid,
     payload: &serde_json::Value,
 ) -> Option<Vec<Notification>> {
     for attempt in 1..=PERSIST_ATTEMPTS {
-        match notifications::insert_for_order(db, customer_id, kind, payload).await {
+        match notifications::insert_for_order(db, event_id, customer_id, kind, payload).await {
             Ok(rows) => return Some(rows),
             Err(e) => {
                 tracing::warn!(attempt, "notification insert failed: {e}");

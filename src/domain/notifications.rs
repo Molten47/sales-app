@@ -9,6 +9,7 @@ pub struct Notification {
     pub user_id: Uuid,
     pub kind: String,
     pub payload: serde_json::Value,
+    pub event_id: Option<Uuid>,
     pub read_at: Option<DateTime<Utc>>,
     pub created_at: DateTime<Utc>,
 }
@@ -18,21 +19,24 @@ pub struct Notification {
 /// staff gets one row, not two.
 pub async fn insert_for_order(
     pool: &PgPool,
+    event_id: Uuid,
     customer_id: Option<Uuid>,
     kind: &str,
     payload: &serde_json::Value,
 ) -> Result<Vec<Notification>, sqlx::Error> {
     sqlx::query_as::<_, Notification>(
         r#"
-        INSERT INTO notifications (user_id, kind, payload)
-        SELECT id, $1, $2 FROM users
+        INSERT INTO notifications (user_id, kind, payload, event_id)
+        SELECT id, $1, $2, $4 FROM users
         WHERE role = 'staff' OR id = $3
-        RETURNING id, user_id, kind, payload, read_at, created_at
+        ON CONFLICT (user_id, event_id) DO NOTHING
+        RETURNING id, user_id, kind, payload, event_id, read_at, created_at
         "#,
     )
     .bind(kind)
     .bind(payload)
     .bind(customer_id)
+    .bind(event_id)
     .fetch_all(pool)
     .await
 }
@@ -40,7 +44,7 @@ pub async fn insert_for_order(
 pub async fn list_unread(pool: &PgPool, user_id: Uuid) -> Result<Vec<Notification>, sqlx::Error> {
     sqlx::query_as::<_, Notification>(
         r#"
-        SELECT id, user_id, kind, payload, read_at, created_at
+        SELECT id, user_id, kind, payload, read_at, created_at, event_id
         FROM notifications
         WHERE user_id = $1 AND read_at IS NULL
         ORDER BY created_at DESC
