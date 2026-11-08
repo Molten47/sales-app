@@ -162,10 +162,11 @@ Measured on a local dev machine:
 ## Design notes and known limitations
 
 - **Auth is a later brick.** `user_id` is taken from the query string on the REST endpoints and on `/ws/connect`, so anyone can read anyone's notifications. This is a deliberate stopgap, to be replaced by OTP login with JWT.
-- **Delivery is at-least-once.** If the app crashes after the router handles an event but before the poller commits, the event is redelivered and can create duplicate notification rows. The planned fix is an `event_id` column with a unique `(user_id, event_id)` constraint and `ON CONFLICT DO NOTHING`. Clients can also dedupe on `event_id`.
+- **Delivery is at-least-once, notifications are idempotent.** If the app crashes after the router handles an event but before the poller commits, the event is redelivered. A unique `(user_id, event_id)` constraint with `ON CONFLICT DO NOTHING` absorbs the duplicate, so no extra rows are created. A redelivered event is not pushed live a second time; the persisted notification is still available from `GET /api/v1/notifications`.
 - **Transient insert failures are retried** in the router (4 attempts with backoff), because the poller marks an event published as soon as it is handed over.
 - **Outbox retries** use exponential backoff (2 s, 4 s, 8 s, capped at 5 min) and mark an event `failed` after 8 attempts.
 - **Single instance.** The WebSocket hub is in-memory, so running several app instances would need a shared pub/sub layer.
+
 
 ## Project layout
 
@@ -187,5 +188,5 @@ migrations/          SQLx migrations
 - [x] LISTEN/NOTIFY wake-up for the poller
 - [x] Users table and create-user endpoint
 - [x] Persisted in-app notifications
-- [ ] Idempotent notifications (`event_id` + unique constraint)
+- [x] Idempotent notifications (`event_id` + unique constraint)
 - [ ] OTP login with JWT, replacing the `user_id` scaffolding
