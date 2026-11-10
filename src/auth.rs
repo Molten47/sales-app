@@ -102,3 +102,22 @@ impl FromRequestParts<AppState> for AuthUser {
         })
     }
 }
+
+pub struct StaffUser {
+    pub id: Uuid,
+}
+
+impl FromRequestParts<AppState> for StaffUser {
+    type Rejection = AppError;
+
+    async fn from_request_parts(
+        parts: &mut Parts,
+        state: &AppState,
+    ) -> Result<Self, Self::Rejection> {
+        let user = AuthUser::from_request_parts(parts, state).await?;
+        if user.role != "staff" {
+            return Err(AppError::Forbidden);
+        }
+        Ok(StaffUser { id: user.id })
+    }
+}

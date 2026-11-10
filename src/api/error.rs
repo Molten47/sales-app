@@ -11,6 +11,7 @@ pub enum AppError {
     NotFound,
     Internal(anyhow::Error),
     Unauthorized,
+    Forbidden,
 }
 
 impl From<sqlx::Error> for AppError {
@@ -39,6 +40,7 @@ impl IntoResponse for AppError {
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())
             }
             AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".to_string()),
+            AppError::Forbidden => (StatusCode::FORBIDDEN, "forbidden".to_string()),
         };
         (status, Json(json!({ "error": msg }))).into_response()
     }
