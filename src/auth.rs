@@ -79,6 +79,7 @@ pub fn code_matches(secret: &str, user_id: Uuid, code: &str, expected: &[u8]) ->
 
 pub struct AuthUser {
     pub id: Uuid,
+    pub role: String,
 }
 
 impl FromRequestParts<AppState> for AuthUser {
@@ -95,6 +96,9 @@ impl FromRequestParts<AppState> for AuthUser {
             .and_then(|v| v.strip_prefix("Bearer "))
             .ok_or(AppError::Unauthorized)?;
         let claims = verify_token(&state.jwt_secret, token)?;
-        Ok(AuthUser { id: claims.sub })
+        Ok(AuthUser {
+            id: claims.sub,
+            role: claims.role,
+        })
     }
 }
