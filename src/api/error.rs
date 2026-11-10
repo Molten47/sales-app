@@ -10,6 +10,7 @@ pub enum AppError {
     Conflict(String),
     NotFound,
     Internal(anyhow::Error),
+    Unauthorized,
 }
 
 impl From<sqlx::Error> for AppError {
@@ -37,6 +38,7 @@ impl IntoResponse for AppError {
                 tracing::error!("internal error: {e:#}");
                 (StatusCode::INTERNAL_SERVER_ERROR, "internal error".into())
             }
+            AppError::Unauthorized => (StatusCode::UNAUTHORIZED, "unauthorized".to_string()),
         };
         (status, Json(json!({ "error": msg }))).into_response()
     }

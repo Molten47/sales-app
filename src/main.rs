@@ -5,9 +5,11 @@ use axum::{
     routing::{get, post},
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
+use std::sync::Arc;
 use std::{net::SocketAddr, time::Duration};
 
 mod api;
+mod auth;
 mod config;
 mod domain;
 mod outbox;
@@ -18,6 +20,7 @@ mod ws;
 pub struct AppState {
     pub db: PgPool,
     pub hub: ws::hub::Hub,
+    pub jwt_secret: Arc<str>,
 }
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -52,8 +55,14 @@ async fn main() -> anyhow::Result<()> {
             "/api/v1/notifications/{id}/read",
             post(api::notifications::mark_read),
         )
+        .route("/api/v1/auth/request-otp", post(api::auth::request_otp))
+        .route("/api/v1/auth/verify-otp", post(api::auth::verify_otp))
         .merge(api::router())
-        .with_state(AppState { db, hub });
+        .with_state(AppState {
+            db,
+            hub,
+            jwt_secret: Arc::from(cfg.jwt_secret),
+        });
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     tracing::info!("migrations applied");

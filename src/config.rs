@@ -5,6 +5,7 @@ use anyhow::{Context, Ok};
 pub struct Config {
     pub database_url: String,
     pub port: u16,
+    pub jwt_secret: String,
 }
 
 impl Config {
@@ -15,6 +16,7 @@ impl Config {
                 .ok()
                 .and_then(|p| p.parse().ok())
                 .unwrap_or(8080),
+            jwt_secret: std::env::var("JWT_SECRET").context("JWT_SECRET must be set")?,
         })
     }
 }
