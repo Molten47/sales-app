@@ -13,29 +13,28 @@ use serde::Deserialize;
 use uuid::Uuid;
 
 use super::hub::{Hub, Role};
-use crate::AppState;
+use crate::{AppState, api::error::AppError, auth};
 
 const PING_EVERY: Duration = Duration::from_secs(25);
 const IDLE_TIMEOUT: Duration = Duration::from_secs(60);
 
-// DEV SCAFFOLDING: anyone can claim any user_id or role.
-// Replaced by a verified JWT when the OTP login lands.
 #[derive(Deserialize)]
 pub struct ConnectParams {
-    user_id: Uuid,
-    role: Option<String>,
+    token: String,
 }
 
 pub async fn ws_connect(
     ws: WebSocketUpgrade,
     State(state): State<AppState>,
     Query(p): Query<ConnectParams>,
-) -> Response {
-    let role = match p.role.as_deref() {
-        Some("staff") => Role::Staff,
-        _ => Role::Customer,
+) -> Result<Response, AppError> {
+    let claims = auth::verify_token(&state.jwt_secret, &p.token)?;
+    let role = if claims.role == "staff" {
+        Role::Staff
+    } else {
+        Role::Customer
     };
-    ws.on_upgrade(move |socket| handle_socket(socket, state.hub, p.user_id, role))
+    Ok(ws.on_upgrade(move |socket| handle_socket(socket, state.hub, claims.sub, role)))
 }
 
 async fn handle_socket(socket: WebSocket, hub: Hub, user_id: Uuid, role: Role) {
