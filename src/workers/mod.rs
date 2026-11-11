@@ -13,6 +13,8 @@ use crate::{
 
 const PERSIST_ATTEMPTS: u32 = 4;
 
+pub mod email;
+
 pub async fn route_events(mut rx: mpsc::Receiver<OutboxEvent>, hub: Hub, db: PgPool) {
     while let Some(e) = rx.recv().await {
         match e.event_type.as_str() {

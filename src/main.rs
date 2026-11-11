@@ -12,6 +12,7 @@ mod api;
 mod auth;
 mod config;
 mod domain;
+mod email;
 mod outbox;
 mod workers;
 mod ws;
@@ -21,6 +22,7 @@ pub struct AppState {
     pub db: PgPool,
     pub hub: ws::hub::Hub,
     pub jwt_secret: Arc<str>,
+    pub mailer: email::Mailer,
 }
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
@@ -38,6 +40,10 @@ async fn main() -> anyhow::Result<()> {
     sqlx::migrate!().run(&db).await?;
 
     let hub = ws::hub::Hub::default();
+
+    let mailer = email::Mailer::new(cfg.email.clone())?;
+    tokio::spawn(workers::email::run(db.clone(), mailer.clone()));
+    tokio::spawn(workers::email::daily_digest(db.clone()));
 
     let (event_tx, event_rx) = tokio::sync::mpsc::channel(256);
     tokio::spawn(workers::route_events(event_rx, hub.clone(), db.clone()));
@@ -61,6 +67,7 @@ async fn main() -> anyhow::Result<()> {
         .with_state(AppState {
             db,
             hub,
+            mailer,
             jwt_secret: Arc::from(cfg.jwt_secret),
         });
 

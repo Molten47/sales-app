@@ -17,12 +17,22 @@ pub async fn request_otp(
 ) -> Result<StatusCode, AppError> {
     let email = body.email.trim().to_lowercase();
 
+    if !otp::allow_request(&state.db, &email).await? {
+        return Ok(StatusCode::ACCEPTED);
+    }
+
     if let Some((user_id, _)) = otp::find_user_by_email(&state.db, &email).await? {
         let code = auth::generate_code();
         let hash = auth::hash_code(&state.jwt_secret, user_id, &code);
         otp::store(&state.db, user_id, &hash).await?;
-        // DEMO ONLY: stands in for an email/SMS provider
-        tracing::info!(%email, %code, "OTP issued (demo: delivered via log)");
+
+        // Sent in the background so response time doesn't reveal whether the email exists.
+        let mailer = state.mailer.clone();
+        tokio::spawn(async move {
+            if let Err(e) = mailer.send_otp(&email, &code).await {
+                tracing::error!("failed to send otp email: {e:#}");
+            }
+        });
     }
     Ok(StatusCode::ACCEPTED)
 }
