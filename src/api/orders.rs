@@ -25,6 +25,21 @@ pub fn router() -> Router<AppState> {
     Router::new()
         .route("/orders", post(create))
         .route("/orders/{id}", get(fetch))
+        .route("/orders/{id}/deliver", post(deliver))
+}
+
+async fn deliver(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Path(id): Path<Uuid>,
+) -> Result<Json<Order>, AppError> {
+    if user.role != "staff" {
+        return Err(AppError::Forbidden);
+    }
+    let order = orders::mark_delivered(&s.db, id)
+        .await?
+        .ok_or(AppError::NotFound)?;
+    Ok(Json(order))
 }
 
 async fn create(

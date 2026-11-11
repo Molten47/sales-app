@@ -2,6 +2,7 @@ use sqlx::PgPool;
 use uuid::Uuid;
 
 pub const MAX_ATTEMPTS: i32 = 5;
+pub const MAX_REQUESTS_PER_HOUR: i64 = 5;
 const TTL_SECS: f64 = 300.0;
 
 pub async fn find_user_by_email(
@@ -48,11 +49,32 @@ pub async fn begin_attempt(pool: &PgPool, user_id: Uuid) -> Result<Option<Vec<u8
     .await
 }
 
-/// Deletes the code. False means someone else already used it.
+// False means someone's already used the code.
 pub async fn consume(pool: &PgPool, user_id: Uuid) -> Result<bool, sqlx::Error> {
     let res = sqlx::query("DELETE FROM otp_codes WHERE user_id = $1")
         .bind(user_id)
         .execute(pool)
         .await?;
     Ok(res.rows_affected() > 0)
+}
+
+// Record new request and return false if the email is over its hourly limit.
+pub async fn allow_request(pool: &PgPool, email: &str) -> Result<bool, sqlx::Error> {
+    let count: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM otp_requests
+         WHERE email = $1 AND created_at > now() - interval '1 hour'",
+    )
+    .bind(email)
+    .fetch_one(pool)
+    .await?;
+
+    if count >= MAX_REQUESTS_PER_HOUR {
+        return Ok(false);
+    }
+
+    sqlx::query("INSERT INTO otp_requests (email) VALUES ($1)")
+        .bind(email)
+        .execute(pool)
+        .await?;
+    Ok(true)
 }
