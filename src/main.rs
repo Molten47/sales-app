@@ -2,11 +2,14 @@ use axum::{
     Router,
     extract::State,
     http::StatusCode,
+    http::{HeaderValue, Method, header},
     routing::{get, post},
 };
 use sqlx::{PgPool, postgres::PgPoolOptions};
 use std::sync::Arc;
 use std::{net::SocketAddr, time::Duration};
+
+use tower_http::cors::CorsLayer;
 
 mod api;
 mod auth;
@@ -49,6 +52,18 @@ async fn main() -> anyhow::Result<()> {
     tokio::spawn(workers::route_events(event_rx, hub.clone(), db.clone()));
     tokio::spawn(outbox::poller::run(db.clone(), event_tx));
 
+    let origins = cfg
+        .cors_origins
+        .iter()
+        .map(|o| o.parse::<HeaderValue>())
+        .collect::<Result<Vec<_>, _>>()?;
+
+    let cors = CorsLayer::new()
+        .allow_origin(origins)
+        .allow_methods([Method::GET, Method::POST, Method::OPTIONS])
+        .allow_headers([header::AUTHORIZATION, header::CONTENT_TYPE])
+        .max_age(Duration::from_secs(3600));
+
     let app = Router::new()
         .route("/health", get(|| async { "ok" }))
         .route("/health/ready", get(ready))
@@ -69,7 +84,8 @@ async fn main() -> anyhow::Result<()> {
             hub,
             mailer,
             jwt_secret: Arc::from(cfg.jwt_secret),
-        });
+        })
+        .layer(cors);
 
     let addr = SocketAddr::from(([0, 0, 0, 0], cfg.port));
     tracing::info!("migrations applied");
