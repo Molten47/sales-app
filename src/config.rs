@@ -12,6 +12,7 @@ pub struct Config {
     pub port: u16,
     pub jwt_secret: String,
     pub email: EmailProvider,
+    pub cors_origins: Vec<String>,
 }
 
 impl Config {
@@ -33,6 +34,12 @@ impl Config {
                 .unwrap_or(8080),
             jwt_secret: std::env::var("JWT_SECRET").context("JWT_SECRET must be set")?,
             email,
+            cors_origins: std::env::var("CORS_ORIGINS")
+                .unwrap_or_else(|_| "http://localhost:3000".into())
+                .split(',')
+                .map(|s| s.trim().trim_end_matches('/').to_string())
+                .filter(|s| !s.is_empty())
+                .collect(),
         })
     }
 }
