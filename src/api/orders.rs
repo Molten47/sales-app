@@ -1,10 +1,11 @@
 use axum::{
     Json, Router,
-    extract::{Path, State},
+    extract::{Path, Query, State},
     http::StatusCode,
     routing::{get, post},
 };
-use serde::Deserialize;
+use chrono::DateTime;
+use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use super::error::AppError;
@@ -23,9 +24,57 @@ pub struct CreateOrder {
 
 pub fn router() -> Router<AppState> {
     Router::new()
-        .route("/orders", post(create))
+        .route("/orders", post(create).get(list))
         .route("/orders/{id}", get(fetch))
         .route("/orders/{id}/deliver", post(deliver))
+}
+#[derive(Deserialize)]
+struct ListParams {
+    limit: Option<i64>,
+    cursor: Option<String>,
+}
+
+#[derive(Serialize)]
+struct OrderPage {
+    items: Vec<Order>,
+    next_cursor: Option<String>,
+}
+
+fn encode_cursor(o: &Order) -> String {
+    format!("{}_{}", o.created_at.timestamp_micros(), o.id)
+}
+
+fn decode_cursor(raw: &str) -> Result<(chrono::DateTime<chrono::Utc>, Uuid), AppError> {
+    let bad = || AppError::BadRequest("invalid cursor".into());
+    let (micros, id) = raw.split_once('_').ok_or_else(bad)?;
+    let micros: i64 = micros.parse().map_err(|_| bad())?;
+    let at = DateTime::from_timestamp_micros(micros).ok_or_else(bad)?;
+    let id = Uuid::parse_str(id).map_err(|_| bad())?;
+    Ok((at, id))
+}
+
+async fn list(
+    State(s): State<AppState>,
+    user: AuthUser,
+    Query(p): Query<ListParams>,
+) -> Result<Json<OrderPage>, AppError> {
+    let limit = p.limit.unwrap_or(20).clamp(1, 100);
+    let after = p.cursor.as_deref().map(decode_cursor).transpose()?;
+    let who = if user.role == "staff" {
+        None
+    } else {
+        Some(user.id)
+    };
+
+    // fetch one extra row to learn whether another page exists
+    let mut items = orders::list_orders(&s.db, who, limit + 1, after).await?;
+    let next_cursor = if items.len() as i64 > limit {
+        items.truncate(limit as usize);
+        items.last().map(encode_cursor)
+    } else {
+        None
+    };
+    Ok(Json(OrderPage { items, next_cursor }))
 }
 
 async fn deliver(
