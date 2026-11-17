@@ -1,11 +1,11 @@
+use crate::domain::analytics;
 use chrono::{Days, Timelike, Utc};
-use std::time::Duration;
-
 use sqlx::PgPool;
+use std::time::Duration;
 
 use crate::{
     domain::email_jobs,
-    email::{CurrencyTotal, Email, Mailer},
+    email::{Email, Mailer},
 };
 
 const DIGEST_HOUR_UTC: u32 = 7;
@@ -72,25 +72,7 @@ async fn enqueue_digest(db: &PgPool) -> Result<(), sqlx::Error> {
     let start = day.and_hms_opt(0, 0, 0).unwrap().and_utc();
     let end = today.and_hms_opt(0, 0, 0).unwrap().and_utc();
 
-    let rows: Vec<(String, i64, i64)> = sqlx::query_as(
-        "SELECT currency::text, count(*), COALESCE(sum(total_minor), 0)::bigint
-     FROM orders WHERE created_at >= $1 AND created_at < $2
-     GROUP BY currency ORDER BY currency",
-    )
-    .bind(start)
-    .bind(end)
-    .fetch_all(db)
-    .await?;
-
-    let totals: Vec<CurrencyTotal> = rows
-        .into_iter()
-        .map(|(currency, orders, revenue_minor)| CurrencyTotal {
-            currency,
-            orders,
-            revenue_minor,
-        })
-        .collect();
-
+    let totals = analytics::totals_between(db, start, end).await?;
     let date = day.to_string();
     let staff: Vec<String> = sqlx::query_scalar("SELECT email FROM users WHERE role = 'staff'")
         .fetch_all(db)

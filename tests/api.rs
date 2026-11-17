@@ -46,15 +46,21 @@ async fn call(
     let res = app.clone().oneshot(req.body(body).unwrap()).await.unwrap();
     let status = res.status();
     let bytes = res.into_body().collect().await.unwrap().to_bytes();
-    (status, serde_json::from_slice(&bytes).unwrap_or(Value::Null))
+    (
+        status,
+        serde_json::from_slice(&bytes).unwrap_or(Value::Null),
+    )
 }
 
 /// Inserts a user directly and returns (id, valid token).
 async fn seed_user(db: &PgPool, email: &str, staff: bool) -> (Uuid, String) {
     let role = if staff { "staff" } else { "customer" };
-    let id: Uuid = sqlx::query_scalar(&format!(
-        "INSERT INTO users (email, name, role) VALUES ($1, 'Test', '{role}') RETURNING id"
-    ))
+    let id: Uuid = sqlx::query_scalar(
+        "INSERT INTO users (email, name, role) VALUES ($1, 'Test', $2) RETURNING id",
+    )
+    .bind(email)
+    .bind(role)
+    .bind(email)
     .bind(email)
     .fetch_one(db)
     .await
@@ -70,7 +76,10 @@ async fn set_code(db: &PgPool, id: Uuid, code: &str) {
 }
 
 async fn count(db: &PgPool, sql: &str) -> i64 {
-    sqlx::query_scalar(sql).fetch_one(db).await.unwrap()
+    sqlx::query_scalar(sqlx::AssertSqlSafe(sql.to_owned()))
+        .fetch_one(db)
+        .await
+        .unwrap()
 }
 
 async fn create_order(app: &Router, token: &str) -> String {
@@ -123,14 +132,26 @@ async fn otp_login_is_single_use(db: PgPool) {
     set_code(&db, id, "123456").await;
     let uri = "/api/v1/auth/verify-otp";
 
-    let (status, body) =
-        call(&app, Method::POST, uri, None, verify_body("a@example.com", "123456")).await;
+    let (status, body) = call(
+        &app,
+        Method::POST,
+        uri,
+        None,
+        verify_body("a@example.com", "123456"),
+    )
+    .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(body["role"], "customer");
     assert!(body["token"].as_str().is_some());
 
-    let (status, _) =
-        call(&app, Method::POST, uri, None, verify_body("a@example.com", "123456")).await;
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        uri,
+        None,
+        verify_body("a@example.com", "123456"),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
@@ -142,13 +163,25 @@ async fn otp_locks_after_five_wrong_attempts(db: PgPool) {
     let uri = "/api/v1/auth/verify-otp";
 
     for _ in 0..5 {
-        let (status, _) =
-            call(&app, Method::POST, uri, None, verify_body("a@example.com", "000000")).await;
+        let (status, _) = call(
+            &app,
+            Method::POST,
+            uri,
+            None,
+            verify_body("a@example.com", "000000"),
+        )
+        .await;
         assert_eq!(status, StatusCode::UNAUTHORIZED);
     }
     // the right code no longer works once locked
-    let (status, _) =
-        call(&app, Method::POST, uri, None, verify_body("a@example.com", "123456")).await;
+    let (status, _) = call(
+        &app,
+        Method::POST,
+        uri,
+        None,
+        verify_body("a@example.com", "123456"),
+    )
+    .await;
     assert_eq!(status, StatusCode::UNAUTHORIZED);
 }
 
@@ -270,7 +303,11 @@ async fn creating_an_order_queues_event_and_email_together(db: PgPool) {
     create_order(&app, &token).await;
 
     assert_eq!(
-        count(&db, "SELECT count(*) FROM outbox_events WHERE event_type = 'order.created'").await,
+        count(
+            &db,
+            "SELECT count(*) FROM outbox_events WHERE event_type = 'order.created'"
+        )
+        .await,
         1
     );
     assert_eq!(
@@ -304,7 +341,11 @@ async fn deliver_is_staff_only_and_happens_once(db: PgPool) {
     assert_eq!(status, StatusCode::NOT_FOUND);
 
     assert_eq!(
-        count(&db, "SELECT count(*) FROM email_jobs WHERE kind = 'order_delivered'").await,
+        count(
+            &db,
+            "SELECT count(*) FROM email_jobs WHERE kind = 'order_delivered'"
+        )
+        .await,
         1
     );
 }
