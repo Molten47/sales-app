@@ -126,3 +126,31 @@ pub async fn mark_delivered(db: &PgPool, id: Uuid) -> Result<Option<Order>, sqlx
     tx.commit().await?;
     Ok(Some(order))
 }
+/// Newest first. `customer = None` means all customers (staff).
+/// `after` is the (created_at, id) of the last row of the previous page.
+pub async fn list_orders(
+    db: &PgPool,
+    customer: Option<Uuid>,
+    limit: i64,
+    after: Option<(DateTime<Utc>, Uuid)>,
+) -> Result<Vec<Order>, sqlx::Error> {
+    let (after_at, after_id) = match after {
+        Some((t, i)) => (Some(t), Some(i)),
+        None => (None, None),
+    };
+    sqlx::query_as(
+        "SELECT id, customer_id, status, total_minor,
+                currency::text AS currency, created_at
+         FROM orders
+         WHERE ($1::uuid IS NULL OR customer_id = $1)
+           AND ($2::timestamptz IS NULL OR (created_at, id) < ($2, $3::uuid))
+         ORDER BY created_at DESC, id DESC
+         LIMIT $4",
+    )
+    .bind(customer)
+    .bind(after_at)
+    .bind(after_id)
+    .bind(limit)
+    .fetch_all(db)
+    .await
+}
