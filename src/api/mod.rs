@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod auth;
 pub mod error;
 pub mod notifications;
@@ -9,5 +10,8 @@ use axum::Router;
 use crate::AppState;
 
 pub fn router() -> Router<AppState> {
-    Router::new().nest("/api/v1", orders::router().merge(users::router()))
+    Router::new().nest(
+        "/api/v1",
+        orders::router().merge(users::router().merge(analytics::router())),
+    )
 }

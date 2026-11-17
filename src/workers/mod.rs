@@ -18,37 +18,42 @@ pub mod email;
 pub async fn route_events(mut rx: mpsc::Receiver<OutboxEvent>, hub: Hub, db: PgPool) {
     while let Some(e) = rx.recv().await {
         match e.event_type.as_str() {
-            "order.created" => {
+            "order.created" | "order.delivered" => {
                 let customer_id = e.payload["customer_id"]
                     .as_str()
                     .and_then(|s| s.parse::<Uuid>().ok());
 
                 // 1. persist first, so offline users still get it
-                let Some(rows) = persist(&db, customer_id, &e.event_type, e.id, &e.payload).await
-                else {
-                    tracing::error!(event_id = %e.id, "notification insert failed, giving up");
-                    continue;
-                };
-
-                // 2. then push live to whoever is connected
-                // (staff are in the hub's per-user map too, so no broadcast_staff needed)
-                let mut delivered = 0;
-                for n in &rows {
-                    let msg = json!({
-                        "type": e.event_type,
-                        "event_id": e.id,
-                        "notification_id": n.id,
-                        "data": e.payload,
-                    })
-                    .to_string();
-                    delivered += hub.send_to_user(n.user_id, &msg);
+                match persist(&db, customer_id, &e.event_type, e.id, &e.payload).await {
+                    Some(rows) => {
+                        // 2. then push live to whoever is connected
+                        let mut delivered = 0;
+                        for n in &rows {
+                            let msg = json!({
+                                "type": e.event_type,
+                                "event_id": e.id,
+                                "notification_id": n.id,
+                                "data": e.payload,
+                            })
+                            .to_string();
+                            delivered += hub.send_to_user(n.user_id, &msg);
+                        }
+                        tracing::info!(
+                            event = %e.event_type,
+                            event_id = %e.id,
+                            recipients = rows.len(),
+                            delivered,
+                            "order routed"
+                        );
+                    }
+                    None => {
+                        tracing::error!(event_id = %e.id, "notification insert failed, giving up")
+                    }
                 }
 
-                tracing::info!(
-                    event_id = %e.id,
-                    recipients = rows.len(),
-                    delivered,
-                    "order routed"
+                // dashboards refetch their numbers; the order itself is already committed
+                hub.broadcast_staff(
+                    &json!({ "type": "analytics.updated", "event_id": e.id }).to_string(),
                 );
             }
             other => tracing::debug!(event = other, "no route for event"),

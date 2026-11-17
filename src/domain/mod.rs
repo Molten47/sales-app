@@ -1,3 +1,4 @@
+pub mod analytics;
 pub mod email_jobs;
 pub mod notifications;
 pub mod orders;
