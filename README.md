@@ -271,6 +271,8 @@ Invoke-RestMethod -Method Post "http://localhost:8081/api/v1/orders/$($order.id)
 - There is no `customer_id` field. The order always belongs to the token's user, and an unexpected `customer_id` in the body is ignored.
 - Delivering twice returns `404` and sends no second email. A customer calling it gets `403`.
 
+`status` is one of `pending` (the default), `paid`, `dispatched`, `delivered` or `cancelled`, enforced by a database `CHECK` constraint. Today the API creates orders as `pending` and the only transition it offers is `delivered`. The other statuses exist in the schema for later.
+
 An order looks like this:
 
 ```json
@@ -453,7 +455,7 @@ Measured on a local dev machine:
 - **Bounces and complaints are not tracked** (no Resend webhook yet).
 - **Tokens last 8 hours** with no refresh and no revocation, and the role is baked into the token, so a role change takes effect at the next login.
 - **The WebSocket token is checked at connect time only**, and it travels in the query string, so it can end up in server or proxy logs. An open socket is not closed when its token expires.
-- **Customers only order for themselves.** Staff placing orders on a customer's behalf is not supported yet, and there is no cancel endpoint.
+- **Customers only order for themselves.** Staff placing orders on a customer's behalf is not supported yet, and no endpoint sets `paid`, `dispatched` or `cancelled` yet (there is no cancel endpoint).
 - **Single instance for WebSockets.** The hub is in-memory, so running several app instances would need a shared pub/sub layer. The email queue is already safe across instances.
 
 ## Project layout
